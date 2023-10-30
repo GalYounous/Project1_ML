@@ -59,9 +59,9 @@ def standardize(x):
         x: numpy array of shape(N,D) N is thee number of samples and D the number of features
     """
     
-    mean_x = np.mean(x,axis=0)
+    mean_x = np.nanmean(x,axis=0)
     x = x - mean_x
-    std_x = np.std(x,axis=0)
+    std_x = np.nanstd(x,axis=0)
     x = x / std_x
     return x, mean_x, std_x
 
@@ -261,7 +261,7 @@ def accuracy(pred,y):
     """Computes the accuracy of the predictions
     
     Args:
-        pred: numpy array of shape=(N,) predictions
+        pred: numpy array of shape=(N,) probabilities
         y: numpy array of shape=(N,) real values
     Returns:
         A scalar containing the accuracy
@@ -271,35 +271,6 @@ def accuracy(pred,y):
     pred[pred<0.5]=0
     return 1/N*np.count_nonzero(pred==y)
 
-def k_folds_reg_logistic_regression(y,x,lambda_,initial_w,max_iters,gamma,k_folds,batch_size):
-    """ Does a regularized logistic regression
-    and computes an average validation loss and accuracy using the k_folds method
-    
-    Args: 
-        y: numpy array of shape=(N,) binary classification
-        x: numpy array of shape=(N,D) Data of N samples with D features
-        lambda_: scalar representing the regularization parameters
-        initial_w: numpy array of shape=(D,) initial weights
-        max_iters: scalar number of iterations
-        gamma: scalar parameter controlling the gradient descent step size
-        k_folds: scalar number of folds
-    Returns:
-        mean_acc: scalar mean accuracy
-        mean_loss: scalar mean loss 
-    """
-    k_indices = build_k_indices(y,k_folds,np.random.seed())# Separate training data in blocs
-    mean_acc=0
-    mean_loss =0
-    for k in np.arange(k_folds):
-        k_validate = k_indices[k]
-        x_validate=x[k_validate,:] #Use the k-th bloc to validate
-        k_train = np.delete(k_indices,k,axis=0).flatten() #Indices of the training blocs
-        w,loss= reg_logistic_regression_stoch(y[k_train],x[k_train],lambda_,initial_w,max_iters,gamma,batch_size)#Regularized logistic regression
-        mean_loss+=loss
-        mean_acc+= accuracy(sigmoid(x_validate.dot(w)),y[k_validate])
-    mean_acc/=k_folds
-    mean_loss/=k_folds
-    return mean_acc,mean_loss
 
 def reg_logistic_regression_stoch(y, tx,lambda_, initial_w, max_iters, gamma,batch_size):
     """Implements logistic regression using gradient descent.
@@ -316,18 +287,40 @@ def reg_logistic_regression_stoch(y, tx,lambda_, initial_w, max_iters, gamma,bat
         loss: a scalar denoting the mean square error
     """
     w=initial_w
-    batch = [True]*batch_size + [False]*(len(y)-batch_size)
-    if(max_iters==0):
-        losses.append(calculate_NLL_loss(y,tx,w))
-    t=time.time()
+    N=len(y)
+    ix=np.arange(N)
     for iter in range(max_iters):
-        rand.shuffle(batch)
-        gradient = calculate_NLL_gradient(y[batch],tx[batch,:],w)
+        batch = rand.choices(ix,k=batch_size)
+        gradient = calculate_NLL_gradient(y[batch],tx[batch],w)
         gradient += lambda_*2*w
         w = w-gamma*gradient #Update the weights
-        print("Time for one iteration ={}".format(time.time()-t) )
-        print("Size of tx[batch] = {} and size of tx = {}".format(tx[batch].size,tx.size))
-        t=time.time()
         
     loss  = calculate_NLL_loss(y,tx,w) #Compute the loss
     return w,loss
+
+def F1(pred,y):
+    """Computes the F1 score of the predictions
+    
+    Args:
+        pred: numpy array of shape=(N,) probabilities
+        y: numpy array of shape=(N,) real values (0 or 1)
+    Returns:
+        A scalar containing the accuracy
+    """
+    N = len(y)
+    pred[pred>=0.5]=1
+    pred[pred<0.5]=0
+    TP = np.count_nonzero(np.logical_and(y==1,pred==1))
+    FP = np.count_nonzero(np.logical_and(y==0,pred==1))
+    FN = np.count_nonzero(np.logical_and(y==1,pred==0))
+    TN = np.count_nonzero(np.logical_and(y==0,pred==0))
+    
+    P=0
+    R=0
+    if(TP!=0):
+        P= TP/(TP+FP)
+        R=TP/(TP+FN)
+        
+    if((P+R) == 0):
+        return 0
+    return 2*(P*R)/(P+R)
